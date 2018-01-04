@@ -1,0 +1,100 @@
+#!/usr/bin/env node
+
+// Usage:
+// $ chmod 755 login
+// $ login -u41524xxx -p123456
+// Or alias it in you profile
+// alias login="$CHANGE_TO_YOUR_PATH/login -u41524xxx -p123456"
+
+const [nodePath, programPath, ...argv] = process.argv
+const querystring = require('querystring')
+const http = require('http')
+const os = require('os')
+const username = (argv.find(s => s.startsWith('-u')) || '').replace(/-u/g, '')
+const password = (argv.find(s => s.startsWith('-p')) || '').replace(/-p/g, '')
+
+if (!username || !password) throw 'Where are your fucking username and password?'
+
+const getIpv6Address = () => {
+  return os.networkInterfaces()
+    .en0
+    .filter(({ family, address }) => family === 'IPv6' && address.startsWith('2001:'))
+    .map(({ address }) => address)
+}
+
+const myIpv6Address = getIpv6Address()
+
+const loginData = querystring.stringify({
+  DDDDD: username,
+  upass: password,
+  v6ip: myIpv6Address.length !== 0 ? myIpv6Address[0] : '',
+  '0MKKey': '123456789',  // fuck ustb login system
+})
+
+console.log(`\n🐸 正在登录.....`)
+console.log(myIpv6Address.length !== 0 ? `🐸 当前 IPv6 地址为: ${myIpv6Address[0]}` : '🙈 当前无 IPv6 地址')
+
+const getOptions = ({
+  method = 'GET',
+  hostname = 'login.ustb.edu.cn',
+  port = 80,
+  path = '',
+  headers = { 'Content-Type': 'application/x-www-form-urlencoded' },
+}) => ({ hostname, port, path, method, headers })
+
+const fetchIt = (param, datas) => new Promise((resolve, reject) => {
+  const request = http.request(
+    getOptions(param),
+    response => {
+      request.on('error', reject)
+      let htmlString = ''
+      response.on('data', chunk => htmlString += chunk)
+      response.on('end', () => resolve(htmlString))
+    }
+  )
+  datas && request.write(datas)
+  request.end()
+})
+
+const printResult = (a, b, c) => {
+  return `
+---------------------------------
+  认证账号  |   ${a}
+---------------------------------
+  当前余额  |   ${b} 元
+---------------------------------
+  使用时间  |   ${c} 分钟
+---------------------------------
+@JeasonStudio
+`
+}
+
+const keepNumbersOnly = s => Number(s.replace(/\D/g, ''))
+
+const login = fetchIt(
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Content-Length': Buffer.byteLength(loginData),
+      },
+    },
+    loginData,
+  )
+  .then(r => {
+    // get login info
+    return fetchIt({ headers: { 'Content-Type': 'text/html' } })
+  })
+  .then(r => {
+    const [useTimes] = r.match(/(time='[0-9]* *')/g) || ['']
+    const [restMoney] = r.match(/(;fee='[0-9]* *')/g) || ['']
+
+    console.log(printResult(
+      username,
+      keepNumbersOnly(restMoney) / 10000,
+      keepNumbersOnly(useTimes),
+    ))
+  })
+  .catch(e => {
+    console.log(`\nLogin error: ${e.message || '未知错误'}`)
+  })
